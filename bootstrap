@@ -1,0 +1,14 @@
+# TODO create a script to bootstrap the environment
+# this includes deploy the infrastructure and the serveless framework functions (lambdas)
+
+# to create the infrastructure: serverless deploy
+# to destroy the infrastructure: serverless remove
+
+if [ "$1" == "deploy" ]; then
+    AWS_PROFILE=serverless-personal serverless deploy
+elif [ "$1" == "remove" ]; then
+    AWS_PROFILE=serverless-personal serverless remove
+else
+    echo "Usage: $0 {deploy|remove}"
+    exit 1
+fi

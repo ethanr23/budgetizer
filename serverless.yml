@@ -1,0 +1,92 @@
+# "org" ensures this Service is used with the correct Serverless Framework Access Key.
+org: epersonalproj
+# "app" enables Serverless Framework Dashboard features and sharing them with other Services.
+app: budgetizer
+# "service" is the name of this project. This will also be added to your AWS resource names.
+service: budgetizer
+
+package:
+  include:
+    - src/**
+    - requirements.txt
+  exclude:
+    - ./**
+    - '!src/**'
+
+provider:
+  name: aws
+  profile: serverless-personal
+  runtime: python3.12
+
+functions:
+  processReceipt:
+    name: process-receipt
+    description: Budgetizer Lambda function
+    handler: src/handler.lambda_handler
+    role: BudgetizerLambdaRole
+    events:
+      - eventBridge:
+          pattern:
+            source:
+              - "aws.s3"
+            detail-type:
+              - "Object Created"
+            resources:
+              - arn:aws:s3:::budgetizer-receipts
+
+resources:
+  Resources:
+    BudgetizerLambdaRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: lambda.amazonaws.com
+              Action: sts:AssumeRole
+        Policies:
+          - PolicyName: BudgetizerLambdaPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - s3:GetObject
+                    - s3:PutObject
+                  Resource: 
+                    - arn:aws:s3:::budgetizer-receipts/*
+                    - arn:aws:s3:::budgetizer-receipts
+                - Effect: Allow
+                  Action:
+                    - secretsmanager:GetSecretValue
+                  Resource: "*"
+
+    BudgetizerReceiptsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: budgetizer-receipts
+        AccessControl: Private
+        VersioningConfiguration:
+          Status: Enabled
+        LifecycleConfiguration:
+          Rules:
+            - Id: ArchiveOldReceipts
+              Status: Enabled
+              ExpirationInDays: 365
+              NoncurrentVersionExpirationInDays: 30
+
+    BudgetizerGoogleCredsSecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Name: budgetizer-google-creds
+        Description: Google credentials for Budgetizer
+        SecretString: ${file(./stringify.js)}
+    
+    BudgetizerOpenAIKeySecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Name: budgetizer-openai-key
+        Description: OpenAI API key for Budgetizer
+        SecretString: ${file(./openai-key.txt)}
