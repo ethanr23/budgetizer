@@ -23,6 +23,8 @@ functions:
     name: process-receipt
     description: Budgetizer Lambda function
     handler: src/handler.lambda_handler
+    environment:
+      GOOGLE_SHEET_NAME: Budget
     role: BudgetizerLambdaRole
     events:
       - eventBridge:
