@@ -9,20 +9,29 @@ package:
   include:
     - src/**
     - requirements.txt
-  exclude:
-    - ./**
-    - '!src/**'
+    #- .requirements/**
+  #exclude:
+    #- ./**
+    #- '!src/**'
 
 provider:
   name: aws
   profile: serverless-personal
-  runtime: python3.12
+  runtime: python3.11
+  architecture: arm64
+
+plugins:
+  - serverless-python-requirements
 
 functions:
   processReceipt:
     name: process-receipt
     description: Budgetizer Lambda function
     handler: src/handler.lambda_handler
+    timeout: 180
+    memorySize: 1024
+    environment:
+      GOOGLE_SHEET_NAME: Budget_2
     role: BudgetizerLambdaRole
     events:
       - eventBridge:
@@ -62,14 +71,23 @@ resources:
                   Action:
                     - secretsmanager:GetSecretValue
                   Resource: "*"
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: 
+                    - arn:aws:logs:us-east-1:872708432875:log-group:/aws/lambda/process-receipt:*
+                    - arn:aws:logs:us-east-1:872708432875:log-group:/aws/lambda/process-receipt # TODO: Verify this works after a fresh deploy
 
     BudgetizerReceiptsBucket:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: budgetizer-receipts
+        NotificationConfiguration:
+          EventBridgeConfiguration:
+            EventBridgeEnabled: true # TODO: Verify this works after a fresh deploy
         AccessControl: Private
-        VersioningConfiguration:
-          Status: Enabled
         LifecycleConfiguration:
           Rules:
             - Id: ArchiveOldReceipts
@@ -90,3 +108,15 @@ resources:
         Name: budgetizer-openai-key
         Description: OpenAI API key for Budgetizer
         SecretString: ${file(./openai-key.txt)}
+
+custom:
+  pythonRequirements:
+    #useDownloadCache: true
+    #useStaticCache: true
+    #pythonBin: python3
+    strip: false 
+    slim: true
+    dockerizePip: true
+    dockerImage: lambda-builder-py313-2
+    dockerOptions: "--platform linux/arm64"
+    #dockerImage: public.ecr.aws/sam/build-python3.12:latest
