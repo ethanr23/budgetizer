@@ -1,25 +1,27 @@
 import boto3
 import json
-import base64
-import os
+
 
 # OpenAI key
-secrets_client = boto3.client("secretsmanager")
+secrets_client = boto3.client(
+    "secretsmanager", 
+    region_name="us-east-1"
+)
 secret_response = secrets_client.get_secret_value(
-    SecretId="budgetizer-openai-key"
+    SecretId="budgetizer-openai-key-2"
 )
 OPENAI_API_KEY = secret_response["SecretString"]
 
 # Google credentials
-google_creds = json.loads(
+GOOGLE_CREDENTIALS = json.loads(
     secrets_client.get_secret_value(
         SecretId="budgetizer-google-creds"
     )["SecretString"]
 )
-GOOGLE_CREDENTIALS = google_creds["SecretString"]
 
 # Google Sheet name
-GOOGLE_SHEET_NAME = os.environ["GOOGLE_SHEET_NAME"]
+#GOOGLE_SHEET_NAME = os.environ["GOOGLE_SHEET_NAME"]
+GOOGLE_SHEET_NAME = "Budget_2"
 
 # Budget categories
 BUDGET_CATEGORIES = {
@@ -39,7 +41,7 @@ BUDGET_CATEGORIES = {
         "savings": False,
         "budgeted": 215
     },
-    "Northwester Mutual (Life and Disability)": {
+    "Northwestern Mutual (Life and Disability)": {
         "savings": False,
         "budgeted": 83
     },
@@ -175,12 +177,13 @@ EXPENSE_SHEET_HEADERS = (
     "Item Description",
     "Category",
     "Amount",
-    "Receipt ID"
+    "Receipt ID",
+    "Total Receipt Amount"
 )
 
 CATEGORY_SHEET_HEADERS = (
     "Category",
     "Budgeted Amount",
-    "Total Expense",
     "Is Savings",
+    "Total Expense"
 )

@@ -1,6 +1,6 @@
 import openai
 import base64
-from config.settings import BUDGET_CATEGORIES, OPENAI_API_KEY
+from src.config.settings import BUDGET_CATEGORIES, OPENAI_API_KEY
 import json
 
 class OpenAIClient:
@@ -13,13 +13,18 @@ class OpenAIClient:
         base64_image = base64.b64encode(image_bytes).decode("utf-8")
 
         prompt = f"""
-        This is a receipt. Extract all itemized purchases and return them in the following JSON format:
+        This is a receipt. 
+        It's possible the receipt is a handwritten note representation a receipt. 
+        If it is handwritten, set tax and "Amount without tax" to 0. Set the "Amount" to the total amount on the receipt.
+        If one of the values in the items format below is null, define it as "Unknown."
+        Extract all itemized purchases and return them in the following JSON format:
 
         {{
         "items": [
             {{
             "Item Description": "Milk",
-            "Amount": 3.49,
+            "Amount without tax": 3.49,
+            "Amount": 3.74,
             "Category": "Groceries",
             "Date": "2025-06-17",
             "Tax": 0.25,
@@ -30,7 +35,11 @@ class OpenAIClient:
         ]
         }}
 
+        If the receipt seems to be from a restaraunt, do not itemize the receipt, but instead return a single item with the total amount and the category "Dining Out".
+
+        Amount is "Amount without tax" plus "Tax".
         Only use these categories: {", ".join(BUDGET_CATEGORIES)}.
+        Do not include any Markdown formatting, triple backticks, or additional text. Return only the JSON object.
         """
 
         response = openai.chat.completions.create(
@@ -54,6 +63,10 @@ class OpenAIClient:
         )
 
         output = response.choices[0].message.content
+        cleaned_output = output.strip("```").strip()
+        print("OpenAI output:", cleaned_output)
+        json.loads(cleaned_output)
+
         try:
             data = json.loads(output)
             return data.get("items", [])

@@ -1,24 +1,30 @@
 import gspread
-from typing import List, Any, Optional
-from config.settings import GOOGLE_CREDENTIALS, GOOGLE_SHEET_NAME, EXPENSE_SHEET_HEADERS, CATEGORY_SHEET_HEADERS, BUDGET_CATEGORIES
-from oauth2client.service_account import ServiceAccountCredentials
+from src.config.settings import GOOGLE_CREDENTIALS, GOOGLE_SHEET_NAME, EXPENSE_SHEET_HEADERS, CATEGORY_SHEET_HEADERS, BUDGET_CATEGORIES
+from google.oauth2.service_account import Credentials
 
 
 class GoogleSheetsClient:
     def __init__(self):
-        self.credentials = gspread.service_account(filename=GOOGLE_CREDENTIALS)
+        #self.credentials = gspread.service_account(filename=GOOGLE_CREDENTIALS)
+        self.credentials = Credentials.from_service_account_info(
+            GOOGLE_CREDENTIALS, 
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+        )
         self.spreadsheet_name = GOOGLE_SHEET_NAME
         self.client = self._create_client()
         
     def _create_client(self):
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(
-            GOOGLE_CREDENTIALS,
-            scope
-        )
-        autorized_client = gspread.authorize(creds)
-        autorized_client.set_timeout(60)  # Set a timeout for operations
-        client = autorized_client.open(self.spreadsheet_name)
+        SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/sheets"]
+        #creds = ServiceAccountCredentials.from_json_keyfile_name(
+        #    GOOGLE_CREDENTIALS,
+        #    scope
+        #)
+        authorized_client = gspread.authorize(self.credentials)
+        authorized_client.set_timeout(60)  # Set a timeout for operations
+        client = authorized_client.open(self.spreadsheet_name)
         return client
     
     def _create_expense_worksheet(self, month: str, year: str) -> None:
@@ -36,38 +42,31 @@ class GoogleSheetsClient:
         try:
             self.client.worksheet(self.category_worksheet)
         except gspread.exceptions.WorksheetNotFound:
-            self.client.add_worksheet(title=self.category_worksheet, rows="100", cols="20")
-            # add budget categories
+            worksheet = self.client.add_worksheet(title=self.category_worksheet, rows="100", cols="20")
+            row_num = len(self.client.worksheet(self.category_worksheet).get_all_values()) + 1
             for category, details in BUDGET_CATEGORIES.items():
-                self.client.worksheet(self.category_worksheet).append_row([
-                    category,
-                    details.get("budgeted"),
-                    details.get("savings", False),
-                    f"=SUMIF('{self.expense_worksheet}'!C:C, A{len(BUDGET_CATEGORIES) + 1}, '{self.expense_worksheet}'!D:D)" # use a formula instead of calculating at run time so I can make modifications in the sheet
-                ])
+                #row_num = len(self.client.worksheet(self.category_worksheet).get_all_values()) + 1
+                formula = f"=SUMIF('{self.expense_worksheet}'!D:D, A{row_num}, '{self.expense_worksheet}'!E:E)"
+                self.client.worksheet(self.category_worksheet).update(
+                    [[
+                        category,
+                        details.get("budgeted"),
+                        details.get("savings", False),
+                        formula
+                    ]],
+                    range_name=f"A{row_num}:D{row_num}",
+                    value_input_option='USER_ENTERED'
+                )
+                row_num += 1
+                
             # add column headers
-            self.client.worksheet(self.category_worksheet).append_row(CATEGORY_SHEET_HEADERS)
+            self.client.worksheet(self.category_worksheet).insert_row(
+                CATEGORY_SHEET_HEADERS,
+                1
+            )
             print(f"Worksheet '{self.category_worksheet}' created successfully.")
 
-    def open_sheet(self, spreadsheet_name: str, worksheet_name: Optional[str] = None):
-        sh = self.client.open(spreadsheet_name)
-        if worksheet_name:
-            return sh.worksheet(worksheet_name)
-        return sh.sheet1
-
-    def read_range(self, spreadsheet_name: str, cell_range: str, worksheet_name: Optional[str] = None) -> List[List[Any]]:
-        ws = self.open_sheet(spreadsheet_name, worksheet_name)
-        return ws.get(cell_range)
-
-    def write_range(self, spreadsheet_name: str, cell_range: str, values: List[List[Any]], worksheet_name: Optional[str] = None):
-        ws = self.open_sheet(spreadsheet_name, worksheet_name)
-        ws.update(cell_range, values)
-
-    def append_row(self, spreadsheet_name: str, row_values: List[Any], worksheet_name: Optional[str] = None):
-        ws = self.open_sheet(spreadsheet_name, worksheet_name)
-        ws.append_row(row_values)
-
-    def budgetize_items(self, items: List[dict]):
+    def budgetize_items(self, items):
         """
         Appends a list of items to the Google Sheet.
         Each item should be a dictionary with keys: date, name, category, amount, vendor, tax.
@@ -78,11 +77,11 @@ class GoogleSheetsClient:
         
         # Get date from the first item to determine the month and year
         first_item = items[0]
-        if "date" not in first_item:
+        if "Date" not in first_item:
             print("No date found in items. Cannot determine month and year.")
-            raise ValueError("Items must contain a 'date' key.")
-        
-        date = first_item.get("date")
+            raise ValueError("Items must contain a 'Date' key.")
+
+        date = first_item.get("Date")
         date_parts = date.split("-")
         if len(date_parts) < 2:
             print("Invalid date format. Expected 'YYYY-MM-DD'.")
@@ -94,9 +93,13 @@ class GoogleSheetsClient:
         # Create the itemized expense and category worksheets if they don't exist
         self._create_expense_worksheet(month, year)
         self._create_category_worksheet(month, year)
+
+        # Get a total value amount for receipt
+        total_amount = sum(item.get("Amount", 0) for item in items if "Amount" in item)
         
         # Append each item to the sheet
         for item in items:
+            item["Total Receipt Amount"] = total_amount
             # Ensure the row matches the order of EXPENSE_SHEET_HEADERS
             row = []
             for header in EXPENSE_SHEET_HEADERS:
@@ -105,4 +108,4 @@ class GoogleSheetsClient:
                 if value is None:
                     value = item.get(header.lower())
                 row.append(value)
-            self.append_row(self.spreadsheet_name, row)
+            self.client.worksheet(self.expense_worksheet).append_row(row)
